@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L5X Program Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>L5X Program Viewer</h1>
+        
+        <div class="file-input-container">
+            <label for="fileInput" class="file-input-label">
+                <span class="file-input-text">Choose L5X File</span>
+                <input type="file" id="fileInput" accept=".l5x" class="file-input">
+            </label>
+            <span id="fileName" class="file-name"></span>
+        </div>
+
+        <div class="ladder-logic-container">
+            <h2>Ladder Logic Parser</h2>
+            <div class="ladder-select-group">
+                <label for="routineSelect">Routine:</label>
+                <select id="routineSelect" class="ladder-select"></select>
+                <label for="rungSelect">Rung:</label>
+                <select id="rungSelect" class="ladder-select"></select>
+            </div>
+            <div class="ladder-input-group">
+                <textarea id="ladderInput" class="ladder-input" placeholder="Enter ladder logic (e.g., [XIC(Test1),XIC(Test2),XIO(Test3)]OTE(Test2);)"></textarea>
+                <button id="parseLadderButton" class="action-button">Parse Ladder Logic</button>
+            </div>
+            <div id="ladderVisualization" class="ladder-visualization">
+                <div class="power-rail left"></div>
+                <div class="rung-container"></div>
+                <div class="power-rail right"></div>
+            </div>
+        </div>
+
+        <div class="program-viewer-container">
+            <h2>Program Hierarchy</h2>
+            <button id="showProgramsButton" class="action-button">Show Programs</button>
+            <div id="programHierarchy" class="program-hierarchy"></div>
+        </div>
+
+        <div class="xml-viewer-container">
+            <h2>XML Content</h2>
+            <pre id="xmlContent" class="xml-content"></pre>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 

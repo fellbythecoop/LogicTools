@@ -326,19 +326,33 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         const branchContent = main.slice(1, closeIdx).trim();
                         const afterBranches = main.slice(closeIdx + 1).trim();
+                        
                         // Split on commas not inside parentheses
-                        const branches = branchContent.split(/,(?![^()]*\))/).map(b => b.trim()).filter(Boolean);
-                        inputInstructions = branches.map(branch => {
-                            // Each branch can have series instructions
-                            const instructions = branch.match(/(\w+\([^)]*\))/g) || [];
-                            return {
-                                branch: instructions.map(instr => parseInstruction(instr))
-                            };
+                        const branchStrings = branchContent.split(/,(?![^()]*\))/).map(b => b.trim()).filter(Boolean);
+                        
+                        if (branchStrings.length === 0) {
+                            throw new Error('Empty branch block found');
+                        }
+                        
+                        // First branch stays on main rung
+                        const mainBranchInstructions = branchStrings[0].match(/(\w+\([^)]*\))/g) || [];
+                        const mainBranch = mainBranchInstructions.map(instr => parseInstruction(instr));
+                        
+                        // Additional branches drop down
+                        const sideBranches = branchStrings.slice(1).map(branchStr => {
+                            const instructions = branchStr.match(/(\w+\([^)]*\))/g) || [];
+                            return instructions.map(instr => parseInstruction(instr));
                         });
+                        
+                        inputInstructions = {
+                            mainBranch: mainBranch,
+                            sideBranches: sideBranches
+                        };
+                        
                         // Parse any series instructions after the branches
                         if (afterBranches) {
                             const seriesInstructions = afterBranches.match(/(\w+\([^)]+\))/g) || [];
-                            inputInstructions.push(...seriesInstructions.map(instr => parseInstruction(instr)));
+                            inputInstructions.seriesAfterBranches = seriesInstructions.map(instr => parseInstruction(instr));
                         }
                     } else {
                         // Single branch - parse as series
@@ -347,7 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                if (!inputInstructions || inputInstructions.length === 0) {
+                if (!inputInstructions || (Array.isArray(inputInstructions) && inputInstructions.length === 0) || 
+                    (typeof inputInstructions === 'object' && !inputInstructions.mainBranch && !inputInstructions.sideBranches)) {
                     throw new Error(`No valid input instructions found in: ${main}`);
                 }
 
@@ -387,23 +402,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const rungElement = document.createElement('div');
             rungElement.className = 'rung';
             
-            // Calculate dynamic SVG height based on number of branches
+            // Calculate dynamic SVG height based on number of side branches
             const BASE_HEIGHT = 180;
-            const BRANCH_HEIGHT = 80; // Height added per branch
-            const numBranches = Array.isArray(rung.inputs) && rung.inputs[0].branch ? rung.inputs.length - 1 : 0;
-            const SVG_HEIGHT = BASE_HEIGHT + (numBranches * BRANCH_HEIGHT);
+            const BRANCH_HEIGHT = 80; // Height added per side branch
+            const numSideBranches = (typeof rung.inputs === 'object' && rung.inputs.sideBranches) ? rung.inputs.sideBranches.length : 0;
+            const SVG_HEIGHT = BASE_HEIGHT + (numSideBranches * BRANCH_HEIGHT);
             
             // SVG dimensions and constants
             const SVG_WIDTH = 800;
             const INSTRUCTION_WIDTH = 100;
             const INSTRUCTION_HEIGHT = 40;
             const HORIZONTAL_SPACING = 30;
-            const VERTICAL_BRANCH_SPACING = 80; // Increased spacing between branches
+            const VERTICAL_BRANCH_SPACING = 80; // Spacing between side branches
             const POWER_RAIL_OFFSET = 20;
-            const RIGHT_MARGIN = 40;
             const MAIN_RUNG_Y = SVG_HEIGHT / 2;
-            const BRANCH_TEE_OFFSET = 20;
-            const BRANCH_JOIN_OFFSET = 20;
             
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('class', 'ladder-svg');
@@ -417,86 +429,82 @@ document.addEventListener('DOMContentLoaded', () => {
             
             let rungStartX = POWER_RAIL_OFFSET;
             let rungEndX = SVG_WIDTH - POWER_RAIL_OFFSET;
-            let mainInstrX = rungStartX + HORIZONTAL_SPACING;
+            let currentX = rungStartX + HORIZONTAL_SPACING;
             let oteX = rungEndX - INSTRUCTION_WIDTH;
             
-            // Check for bracketed branches (side branches)
-            if (Array.isArray(rung.inputs) && rung.inputs.length > 0 && rung.inputs[0].branch) {
-                // Draw main rung line (from left rail to OTE)
-                svg.appendChild(createSVGLine(rungStartX, MAIN_RUNG_Y, rungEndX, MAIN_RUNG_Y, '#2c3e50', 2));
-                // Calculate max branch length
-                const branchList = rung.inputs.filter(input => input.branch).map(input => input.branch);
-                const maxBranchLength = Math.max(...branchList.map(branch => branch.length));
-                // Tee and join points
-                const teeX = mainInstrX - BRANCH_TEE_OFFSET;
-                // The joinX is after the last instruction of the longest branch
-                const joinX = mainInstrX + (INSTRUCTION_WIDTH + HORIZONTAL_SPACING) * (maxBranchLength - 1) + INSTRUCTION_WIDTH + BRANCH_JOIN_OFFSET;
-                // Draw all branches (including main branch)
-                const branchCount = branchList.length;
-                const branchYOffset = VERTICAL_BRANCH_SPACING;
-                const centerOffset = (branchCount - 1) / 2;
-                for (let i = 0; i < branchCount; i++) {
-                    const branch = branchList[i];
-                    // Center branches around MAIN_RUNG_Y
-                    let branchY = MAIN_RUNG_Y + (i - centerOffset) * branchYOffset;
-                    // Vertical line down from main rung (tee)
-                    svg.appendChild(createSVGLine(teeX, MAIN_RUNG_Y, teeX, branchY + INSTRUCTION_HEIGHT / 2, '#2c3e50', 2));
-                    // Horizontal branch line (from teeX to joinX)
-                    svg.appendChild(createSVGLine(teeX, branchY + INSTRUCTION_HEIGHT / 2, joinX, branchY + INSTRUCTION_HEIGHT / 2, '#2c3e50', 2));
-                    // Vertical line up to main rung (join)
-                    svg.appendChild(createSVGLine(joinX, branchY + INSTRUCTION_HEIGHT / 2, joinX, MAIN_RUNG_Y, '#2c3e50', 2));
-                    // Draw branch instructions in series, starting at mainInstrX
-                    let branchInstrX = mainInstrX;
-                    branch.forEach((instr, idx) => {
-                        createInstructionSVG(svg, instr, branchInstrX, branchY, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
-                        if (idx < branch.length - 1) {
-                            svg.appendChild(createSVGLine(branchInstrX + INSTRUCTION_WIDTH, branchY + INSTRUCTION_HEIGHT / 2, branchInstrX + INSTRUCTION_WIDTH + HORIZONTAL_SPACING, branchY + INSTRUCTION_HEIGHT / 2, '#2c3e50', 2));
+            // Draw main rung line (continuous from left rail to right rail)
+            svg.appendChild(createSVGLine(rungStartX, MAIN_RUNG_Y, rungEndX, MAIN_RUNG_Y, '#2c3e50', 2));
+            
+            // Check for branched structure
+            if (typeof rung.inputs === 'object' && (rung.inputs.mainBranch || rung.inputs.sideBranches)) {
+                const mainBranch = rung.inputs.mainBranch || [];
+                const sideBranches = rung.inputs.sideBranches || [];
+                const seriesAfterBranches = rung.inputs.seriesAfterBranches || [];
+                
+                // Calculate the span of the branch section
+                let maxBranchLength = mainBranch.length;
+                sideBranches.forEach(branch => {
+                    maxBranchLength = Math.max(maxBranchLength, branch.length);
+                });
+                
+                const branchStartX = currentX;
+                const branchEndX = branchStartX + (maxBranchLength * (INSTRUCTION_WIDTH + HORIZONTAL_SPACING)) - HORIZONTAL_SPACING;
+                
+                // Draw main branch instructions on the main rung
+                let mainBranchX = branchStartX;
+                mainBranch.forEach((instruction, index) => {
+                    createInstructionSVG(svg, instruction, mainBranchX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
+                    mainBranchX += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
+                });
+                
+                // Draw side branches
+                if (sideBranches.length > 0) {
+                    // Single tee line down from main rung at start
+                    const firstBranchY = MAIN_RUNG_Y + VERTICAL_BRANCH_SPACING;
+                    const lastBranchY = MAIN_RUNG_Y + (sideBranches.length * VERTICAL_BRANCH_SPACING);
+                    svg.appendChild(createSVGLine(branchStartX, MAIN_RUNG_Y, branchStartX, lastBranchY, '#2c3e50', 2));
+                    
+                    // Single join line up to main rung at end
+                    svg.appendChild(createSVGLine(branchEndX, MAIN_RUNG_Y, branchEndX, lastBranchY, '#2c3e50', 2));
+                    
+                    sideBranches.forEach((branch, branchIndex) => {
+                        const branchY = MAIN_RUNG_Y + ((branchIndex + 1) * VERTICAL_BRANCH_SPACING);
+                        
+                        // Horizontal branch line
+                        svg.appendChild(createSVGLine(branchStartX, branchY, branchEndX, branchY, '#2c3e50', 2));
+                        
+                        // Draw branch instructions
+                        let branchInstrX = branchStartX;
+                        branch.forEach((instruction, instrIndex) => {
+                            createInstructionSVG(svg, instruction, branchInstrX, branchY - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
                             branchInstrX += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
-                        }
+                        });
                     });
-                    // If branch is shorter than max, extend the line to joinX
-                    if (branch.length < maxBranchLength) {
-                        let endX = mainInstrX + (INSTRUCTION_WIDTH + HORIZONTAL_SPACING) * branch.length;
-                        svg.appendChild(createSVGLine(endX, branchY + INSTRUCTION_HEIGHT / 2, joinX, branchY + INSTRUCTION_HEIGHT / 2, '#2c3e50', 2));
-                    }
                 }
-                // Draw horizontal lines from joinX to OTE (if needed)
-                svg.appendChild(createSVGLine(joinX, MAIN_RUNG_Y, oteX, MAIN_RUNG_Y, '#2c3e50', 2));
-                svg.appendChild(createSVGLine(rungStartX, MAIN_RUNG_Y, teeX, MAIN_RUNG_Y, '#2c3e50', 2));
+                
+                // Update current X to after the branch section
+                currentX = branchEndX + HORIZONTAL_SPACING;
+                
                 // Draw series instructions after branches
-                let seriesStartX = joinX + HORIZONTAL_SPACING;
-                let cx = seriesStartX;
-                let drewSeries = false;
-                for (let i = branchList.length; i < rung.inputs.length; i++) {
-                    if (!rung.inputs[i].branch) {
-                        if (!drewSeries) {
-                            // Draw horizontal line from join to first series instruction
-                            svg.appendChild(createSVGLine(joinX, MAIN_RUNG_Y, seriesStartX, MAIN_RUNG_Y, '#2c3e50', 2));
-                            drewSeries = true;
-                        }
-                        createInstructionSVG(svg, rung.inputs[i], cx, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
-                        svg.appendChild(createSVGLine(cx - HORIZONTAL_SPACING, MAIN_RUNG_Y, cx, MAIN_RUNG_Y, '#2c3e50', 2));
-                        cx += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
-                    }
-                }
+                seriesAfterBranches.forEach((instruction, index) => {
+                    createInstructionSVG(svg, instruction, currentX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
+                    currentX += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
+                });
+                
                 // Draw OTE at the end
                 if (rung.output) {
                     createInstructionSVG(svg, rung.output, oteX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
                 }
             } else if (Array.isArray(rung.inputs)) {
-                // Series (no branches)
-                let cx = rungStartX + HORIZONTAL_SPACING;
-                svg.appendChild(createSVGLine(rungStartX, MAIN_RUNG_Y, rungEndX, MAIN_RUNG_Y, '#2c3e50', 2));
+                // Series (no branches) - simple series of instructions
                 rung.inputs.forEach((instruction, index) => {
-                    createInstructionSVG(svg, instruction, cx, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
-                    if (index > 0) {
-                        svg.appendChild(createSVGLine(cx - HORIZONTAL_SPACING, MAIN_RUNG_Y, cx, MAIN_RUNG_Y, '#2c3e50', 2));
-                    }
-                    cx += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
+                    createInstructionSVG(svg, instruction, currentX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
+                    currentX += INSTRUCTION_WIDTH + HORIZONTAL_SPACING;
                 });
+                
                 // Place OTE at the end
                 if (rung.output) {
-                    createInstructionSVG(svg, rung.output, rungEndX - INSTRUCTION_WIDTH, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
+                    createInstructionSVG(svg, rung.output, oteX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
                 }
             }
             

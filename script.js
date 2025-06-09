@@ -415,44 +415,48 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // Check if there's an output instruction at the end
-                const lastInstructionMatch = rung.match(/(\w+\([^)]+\))$/);
+                // Find all instructions in the rung
+                const allInstructions = rung.match(/(\w+\([^)]+\))/g) || [];
+                
+                if (allInstructions.length === 0) {
+                    throw new Error(`No valid instructions found in: ${rung}`);
+                }
+                
+                console.log('All instructions found:', allInstructions); // Debug log
+                
+                // Try to identify the last instruction as output
                 let output = null;
-                let main = rung;
+                let inputInstructions = allInstructions.slice(); // Copy all instructions initially
                 
-                console.log('Full rung:', JSON.stringify(rung)); // Debug log
-                console.log('Last instruction match:', lastInstructionMatch); // Debug log
-                
-                if (lastInstructionMatch) {
-                    const potentialOutput = lastInstructionMatch[1];
-                    console.log('Potential output:', potentialOutput); // Debug log
-                    const outputInstruction = parseInstruction(potentialOutput);
-                    console.log('Parsed output instruction:', outputInstruction); // Debug log
+                if (allInstructions.length > 0) {
+                    const lastInstruction = allInstructions[allInstructions.length - 1];
+                    const parsedLastInstruction = parseInstruction(lastInstruction);
                     
-                    // Check if it's actually an output instruction (OTE, ONS, OSR, etc.)
-                    if (outputInstruction.type.match(/^(OTE|ONS|OSR|OSF)$/i)) {
-                        output = outputInstruction;
-                        main = rung.slice(0, rung.length - potentialOutput.length).trim();
-                        console.log('Found valid output, main becomes:', JSON.stringify(main)); // Debug log
+                    console.log('Last instruction:', lastInstruction, 'Type:', parsedLastInstruction.type); // Debug log
+                    
+                    // Check if it's a typical output instruction
+                    if (parsedLastInstruction.type.match(/^(OTE|ONS|OSR|OSF|OTL|OTU)$/i)) {
+                        output = parsedLastInstruction;
+                        inputInstructions = allInstructions.slice(0, -1); // Remove the output from inputs
+                        console.log('Found output instruction:', output); // Debug log
                     } else {
-                        console.log('Not a valid output instruction type:', outputInstruction.type); // Debug log
+                        // For unknown instructions at the end, treat them as outputs too
+                        // This handles cases like PAI, etc.
+                        output = parsedLastInstruction;
+                        inputInstructions = allInstructions.slice(0, -1); // Remove the output from inputs
+                        console.log('Treating unknown instruction as output:', output); // Debug log
                     }
-                } else {
-                    console.log('No last instruction match found'); // Debug log
                 }
                 
-                // If no output found, treat the entire rung as input instructions
-                if (!output) {
-                    main = rung;
-                    console.log('No output found, treating entire rung as input:', JSON.stringify(main)); // Debug log
-                }
-
-                let inputInstructions = [];
-                if (main) {
-                    console.log('Processing main instructions:', main); // Debug log
-                    // Check for branches at the start
-                    if (main.startsWith('[')) {
-                        // Find the closing bracket for the branches
+                // Parse input instructions
+                let parsedInputs = [];
+                if (inputInstructions.length > 0) {
+                    // Check if input starts with brackets for branching
+                    const inputPortion = inputInstructions.join('');
+                    
+                    if (inputPortion.startsWith('[') && inputPortion.includes(']')) {
+                        // Handle branched inputs
+                        const main = inputPortion;
                         const closeIdx = main.indexOf(']');
                         if (closeIdx === -1) {
                             throw new Error('Unmatched [ in rung');
@@ -477,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             return instructions.map(instr => parseInstruction(instr));
                         });
                         
-                        inputInstructions = {
+                        parsedInputs = {
                             mainBranch: mainBranch,
                             sideBranches: sideBranches
                         };
@@ -485,33 +489,27 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Parse any series instructions after the branches
                         if (afterBranches) {
                             const seriesInstructions = afterBranches.match(/(\w+\([^)]+\))/g) || [];
-                            inputInstructions.seriesAfterBranches = seriesInstructions.map(instr => parseInstruction(instr));
+                            parsedInputs.seriesAfterBranches = seriesInstructions.map(instr => parseInstruction(instr));
                         }
                     } else {
-                        // Single branch - parse as series
-                        console.log('Parsing as series instructions'); // Debug log
-                        console.log('Main string to parse:', JSON.stringify(main)); // Debug log
-                        const instructions = main.match(/(\w+\([^)]+\))/g) || [];
-                        console.log('Regex pattern used:', '/(\w+\([^)]+\))/g'); // Debug log
-                        console.log('Found instructions:', instructions); // Debug log
-                        inputInstructions = instructions.map(instr => parseInstruction(instr));
-                        console.log('Parsed input instructions:', inputInstructions); // Debug log
+                        // Simple series of instructions
+                        parsedInputs = inputInstructions.map(instr => parseInstruction(instr));
                     }
                 }
-
-                console.log('Final inputInstructions:', inputInstructions); // Debug log
-                console.log('Is array?', Array.isArray(inputInstructions)); // Debug log
-                console.log('Length:', inputInstructions.length); // Debug log
                 
-                if (!inputInstructions || 
-                    (Array.isArray(inputInstructions) && inputInstructions.length === 0) || 
-                    (!Array.isArray(inputInstructions) && typeof inputInstructions === 'object' && !inputInstructions.mainBranch && !inputInstructions.sideBranches)) {
-                    throw new Error(`No valid input instructions found in: ${main}`);
+                console.log('Final parsed inputs:', parsedInputs); // Debug log
+                console.log('Final parsed output:', output); // Debug log
+                
+                // Ensure we have valid inputs or outputs
+                if ((!parsedInputs || 
+                    (Array.isArray(parsedInputs) && parsedInputs.length === 0) || 
+                    (!Array.isArray(parsedInputs) && typeof parsedInputs === 'object' && !parsedInputs.mainBranch && !parsedInputs.sideBranches)) && !output) {
+                    throw new Error(`No valid instructions found in: ${rung}`);
                 }
 
                 return {
-                    inputs: inputInstructions,
-                    output: output // Can be null for input-only rungs
+                    inputs: parsedInputs.length > 0 ? parsedInputs : null,
+                    output: output
                 };
             } catch (error) {
                 console.error(`Error parsing rung "${rung}":`, error);
@@ -549,11 +547,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const BASE_HEIGHT = 180;
             const BRANCH_HEIGHT = 80; // Height added per side branch
             
-            // Count input side branches
-            const numInputSideBranches = (typeof rung.inputs === 'object' && rung.inputs.sideBranches) ? rung.inputs.sideBranches.length : 0;
+            // Count input side branches - add null checks
+            const numInputSideBranches = (rung.inputs && typeof rung.inputs === 'object' && rung.inputs.sideBranches) ? rung.inputs.sideBranches.length : 0;
             
-            // Count output side branches
-            const numOutputSideBranches = (typeof rung.output === 'object' && rung.output.sideBranches) ? rung.output.sideBranches.length : 0;
+            // Count output side branches - add null checks
+            const numOutputSideBranches = (rung.output && typeof rung.output === 'object' && rung.output.sideBranches) ? rung.output.sideBranches.length : 0;
             
             const maxSideBranches = Math.max(numInputSideBranches, numOutputSideBranches);
             const SVG_HEIGHT = BASE_HEIGHT + (maxSideBranches * BRANCH_HEIGHT);
@@ -582,8 +580,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let rungStartX = POWER_RAIL_OFFSET;
             let rungEndX = SVG_WIDTH - POWER_RAIL_OFFSET;
             
-            // Check for branched input structure
-            if (typeof rung.inputs === 'object' && (rung.inputs.mainBranch || rung.inputs.sideBranches)) {
+            // Check for branched input structure - add null checks
+            if (rung.inputs && typeof rung.inputs === 'object' && (rung.inputs.mainBranch || rung.inputs.sideBranches)) {
                 const mainBranch = rung.inputs.mainBranch || [];
                 const sideBranches = rung.inputs.sideBranches || [];
                 const seriesAfterBranches = rung.inputs.seriesAfterBranches || [];
@@ -846,6 +844,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Connect to right power rail if no output
                     svg.appendChild(createSVGLine(currentX, MAIN_RUNG_Y, rungEndX, MAIN_RUNG_Y, '#2c3e50', 2));
                 }
+            } else {
+                // Handle case where there are no inputs but there is an output
+                let currentX = rungStartX;
+                
+                if (rung.output) {
+                    // Connect from power rail to output instruction
+                    const oteX = rungEndX - INSTRUCTION_WIDTH;
+                    svg.appendChild(createSVGLine(currentX, MAIN_RUNG_Y, oteX, MAIN_RUNG_Y, '#2c3e50', 2));
+                    createInstructionSVG(svg, rung.output, oteX, MAIN_RUNG_Y - INSTRUCTION_HEIGHT / 2, INSTRUCTION_WIDTH, INSTRUCTION_HEIGHT);
+                } else {
+                    // Connect power rails directly if no instructions at all
+                    svg.appendChild(createSVGLine(currentX, MAIN_RUNG_Y, rungEndX, MAIN_RUNG_Y, '#2c3e50', 2));
+                }
             }
             
             rungElement.appendChild(svg);
@@ -998,6 +1009,102 @@ document.addEventListener('DOMContentLoaded', () => {
             rightLine.setAttribute('stroke-width', '2');
             group.appendChild(rightLine);
             
+        } else if (['ge', 'gt', 'le', 'lt', 'ne', 'eq'].includes(type)) {
+            // Comparison instructions - special layout
+            // Left connection line
+            const leftLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            leftLine.setAttribute('x1', 0);
+            leftLine.setAttribute('y1', centerY);
+            leftLine.setAttribute('x2', w * 0.15);
+            leftLine.setAttribute('y2', centerY);
+            leftLine.setAttribute('stroke', '#2c3e50');
+            leftLine.setAttribute('stroke-width', '2');
+            group.appendChild(leftLine);
+            
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('width', w * 0.7);
+            rect.setAttribute('height', h * 1.4);
+            rect.setAttribute('x', w * 0.15);
+            rect.setAttribute('y', centerY - (h * 0.7));
+            rect.setAttribute('rx', '4');
+            rect.setAttribute('ry', '4');
+            rect.setAttribute('fill', getInstructionColor(instruction.type));
+            rect.setAttribute('stroke', '#2c3e50');
+            rect.setAttribute('stroke-width', '2');
+            group.appendChild(rect);
+            
+            // Right connection line
+            const rightLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            rightLine.setAttribute('x1', w * 0.85);
+            rightLine.setAttribute('y1', centerY);
+            rightLine.setAttribute('x2', w);
+            rightLine.setAttribute('y2', centerY);
+            rightLine.setAttribute('stroke', '#2c3e50');
+            rightLine.setAttribute('stroke-width', '2');
+            group.appendChild(rightLine);
+            
+            // Parse the tag to get the two values
+            const params = instruction.tag.split(',').map(p => p.trim());
+            const value1 = params[0] || '';
+            const value2 = params[1] || '';
+            
+            // Get the comparison symbol
+            const symbols = {
+                'ge': '≥',
+                'gt': '>',
+                'le': '≤',
+                'lt': '<',
+                'ne': '≠',
+                'eq': '='
+            };
+            const symbol = symbols[type] || '?';
+            
+            // Instruction type at the top
+            const typeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            typeText.setAttribute('x', w/2);
+            typeText.setAttribute('y', centerY - h * 0.45);
+            typeText.setAttribute('text-anchor', 'middle');
+            typeText.setAttribute('dominant-baseline', 'middle');
+            typeText.setAttribute('fill', '#2c3e50');
+            typeText.setAttribute('font-weight', 'bold');
+            typeText.setAttribute('font-size', '16px');
+            typeText.textContent = instruction.type.toUpperCase();
+            group.appendChild(typeText);
+            
+            // First value
+            const value1Text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            value1Text.setAttribute('x', w/2);
+            value1Text.setAttribute('y', centerY - h * 0.2);
+            value1Text.setAttribute('text-anchor', 'middle');
+            value1Text.setAttribute('dominant-baseline', 'middle');
+            value1Text.setAttribute('fill', '#2c3e50');
+            value1Text.setAttribute('font-size', '16px');
+            value1Text.textContent = value1;
+            group.appendChild(value1Text);
+            
+            // Comparison symbol
+            const symbolText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            symbolText.setAttribute('x', w/2);
+            symbolText.setAttribute('y', centerY);
+            symbolText.setAttribute('text-anchor', 'middle');
+            symbolText.setAttribute('dominant-baseline', 'middle');
+            symbolText.setAttribute('fill', '#2c3e50');
+            symbolText.setAttribute('font-weight', 'bold');
+            symbolText.setAttribute('font-size', '16px');
+            symbolText.textContent = symbol;
+            group.appendChild(symbolText);
+            
+            // Second value
+            const value2Text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            value2Text.setAttribute('x', w/2);
+            value2Text.setAttribute('y', centerY + h * 0.2);
+            value2Text.setAttribute('text-anchor', 'middle');
+            value2Text.setAttribute('dominant-baseline', 'middle');
+            value2Text.setAttribute('fill', '#2c3e50');
+            value2Text.setAttribute('font-size', '16px');
+            value2Text.textContent = value2;
+            group.appendChild(value2Text);
+            
         } else {
             // Fallback for other instruction types - simple rectangle with connections
             // Left connection line
@@ -1045,17 +1152,19 @@ document.addEventListener('DOMContentLoaded', () => {
             group.appendChild(typeText);
         }
         
-        // Add tag label above the symbol for all instruction types
-        const tagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        tagText.setAttribute('x', w/2);
-        tagText.setAttribute('y', -5);
-        tagText.setAttribute('text-anchor', 'middle');
-        tagText.setAttribute('fill', '#2c3e50');
-        tagText.setAttribute('font-size', '14px');
-        tagText.setAttribute('font-weight', 'bold');
-        tagText.setAttribute('font-family', 'Arial, sans-serif');
-        tagText.textContent = instruction.tag;
-        group.appendChild(tagText);
+        // Add tag label above the symbol for all instruction types except comparisons (they handle their own text)
+        if (!['ge', 'gt', 'le', 'lt', 'ne', 'eq'].includes(type)) {
+            const tagText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            tagText.setAttribute('x', w/2);
+            tagText.setAttribute('y', -5);
+            tagText.setAttribute('text-anchor', 'middle');
+            tagText.setAttribute('fill', '#2c3e50');
+            tagText.setAttribute('font-size', '14px');
+            tagText.setAttribute('font-weight', 'bold');
+            tagText.setAttribute('font-family', 'Arial, sans-serif');
+            tagText.textContent = instruction.tag;
+            group.appendChild(tagText);
+        }
         
         svg.appendChild(group);
     }
@@ -1068,6 +1177,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return '#fff3e0';
             case 'ote':
                 return '#e8f5e9';
+            case 'ge':
+            case 'gt':
+            case 'le':
+            case 'lt':
+            case 'ne':
+            case 'eq':
+                return '#fff8e1'; // Light yellow for comparison instructions
             default:
                 return '#f8f9fa';
         }

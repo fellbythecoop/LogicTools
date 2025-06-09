@@ -322,4 +322,13 @@ h2 {
     border-radius: 5px;
     font-size: 1rem;
     background: #fff;
+}
+
+.ladder-error {
+    color: #e74c3c;
+    padding: 1rem;
+    background-color: #fde8e8;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+    border: 1px solid #f5c6cb;
 } 

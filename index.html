@@ -27,9 +27,14 @@
                 <select id="rungSelect" class="ladder-select"></select>
             </div>
             <div class="ladder-input-group">
-                <textarea id="ladderInput" class="ladder-input" placeholder="Enter ladder logic (e.g., [XIC(MainPart1)XIC(MainPart2),XIC(Branch1_1)XIC(Branch1_2),XIO(Branch2_1)]XIC(AfterBranches)OTE(Output);)"></textarea>
+                <textarea id="ladderInput" class="ladder-input" placeholder="Enter ladder logic. Formats supported:
+1) [XIC(MainPart1)XIC(MainPart2),XIC(Branch1_1)XIC(Branch1_2),XIO(Branch2_1)]XIC(AfterBranches)OTE(Output);
+2) [XIC(Test1),XIC(Test2) XIO(Test3)][XIC(Test4),XIC(Test5) XIO(Test6)][OTE(Test2),OTE(Test3)]
+3) [XIC(Test1) ,XIC(Test2) XIO(Test3) ][XIC(Test4) ,XIC(Test5) XIO(Test6) ]OTE(Test2);
+4) [XIC(Test1) ,XIC(Test2) XIO(Test3) ][XIC(Test4) ,XIC(Test5) XIO(Test6) ][OTE(Test2) ,OTE(Test3) ];"></textarea>
                 <button id="parseLadderButton" class="action-button">Parse Ladder Logic</button>
             </div>
+            <div id="ladderError" class="ladder-error" style="display: none;"></div>
             <div id="ladderVisualization" class="ladder-visualization">
                 <div class="power-rail left"></div>
                 <div class="rung-container"></div>
